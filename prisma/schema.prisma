@@ -1,0 +1,206 @@
+// Telemedicine Platform Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for patients, doctors, and admins
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  role          Role      @default(PATIENT)
+  phone         String?
+  dateOfBirth   DateTime?
+  gender        String?
+  bloodGroup    String?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
+  country       String    @default("US")
+
+  // Doctor-specific fields
+  specialization String?
+  licenseNumber  String?
+  hospitalAffiliation String?
+  yearsOfExperience Int?
+  consultationFee Decimal? @db.Decimal(10, 2)
+  availableDays  String[] // e.g., ["MON", "WED", "FRI"]
+  availableHours String? // e.g., "09:00-17:00"
+
+  // Authentication
+  emailVerified DateTime?
+  password      String? // Hashed password for email/password auth
+
+  // Social auth
+  accounts      Account[]
+  sessions      Session[]
+
+  // Relationships
+  appointmentsAsPatient Appointment[] @relation("patientAppointments")
+  appointmentsAsDoctor  Appointment[] @relation("doctorAppointments")
+  medicalRecords       MedicalRecord[]
+  prescriptions        Prescription[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([email])
+  @@index([role])
+  @@index([specialization])
+}
+
+// Authentication models (NextAuth.js compatible)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Appointment model
+model Appointment {
+  id            String    @id @default(cuid())
+  patientId     String
+  doctorId      String
+  date          DateTime
+  duration      Int       @default(30) // minutes
+  status        AppointmentStatus @default(SCHEDULED)
+  reason        String?
+  symptoms      String?
+  notes         String?
+
+  // Video call
+  roomId        String?   @unique
+  callStartedAt DateTime?
+  callEndedAt   DateTime?
+  callDuration  Int?      // in minutes
+
+  // Payment
+  amount        Decimal?  @db.Decimal(10, 2)
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentId     String?
+
+  // Relationships
+  patient       User      @relation("patientAppointments", fields: [patientId], references: [id])
+  doctor        User      @relation("doctorAppointments", fields: [doctorId], references: [id])
+  medicalRecord MedicalRecord?
+  prescription  Prescription?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([date])
+  @@index([status])
+}
+
+// Medical records
+model MedicalRecord {
+  id            String    @id @default(cuid())
+  patientId     String
+  appointmentId String?
+  height        Decimal?  @db.Decimal(5, 2) // in cm
+  weight        Decimal?  @db.Decimal(5, 2) // in kg
+  bloodPressure String?   // e.g., "120/80"
+  temperature   Decimal?  @db.Decimal(4, 1) // in °C
+  heartRate     Int?
+  symptoms      String?
+  diagnosis     String?
+  treatment     String?
+  notes         String?
+
+  attachments   String[] // URLs to attached files/images
+
+  patient       User      @relation(fields: [patientId], references: [id])
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([patientId])
+  @@index([appointmentId])
+}
+
+// Prescriptions
+model Prescription {
+  id            String    @id @default(cuid())
+  patientId     String
+  doctorId      String
+  appointmentId String?
+  medications   Json      // Array of medication objects
+  instructions  String?
+  validUntil    DateTime?
+  status        PrescriptionStatus @default(ACTIVE)
+
+  patient       User      @relation(fields: [patientId], references: [id])
+  doctor        User      @relation(fields: [doctorId], references: [id])
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([appointmentId])
+}
+
+// Enums
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PrescriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  FULFILLED
+}
